@@ -1,0 +1,62 @@
+{
+    "C1": [
+        {
+            "url": "https://www.sharp409a.com/",
+            "primary_keyword": "company valuation services",
+            "secondary_keywords": [
+                "valuation for startups",
+                "business valuation services",
+                "startup valuation services",
+                "start up valuation provider"
+            ],
+            "status": "Pending",
+            "priority": "Medium",
+            "last_audit": "Never",
+            "notes": "C1-P1"
+        },
+        {
+            "url": "https://www.sharp409a.com/409a-valuation/",
+            "primary_keyword": "409a valuation services",
+            "secondary_keywords": [
+                "409a valuation providers",
+                "409a valuation firms",
+                "409a valuation companies",
+                "company valuation 409a Services"
+            ],
+            "status": "Pending",
+            "priority": "Medium",
+            "last_audit": "Never",
+            "notes": "C1-P2"
+        }
+    ],
+    "C2": [
+        {
+            "url": "https://www.bravamarketing.com/",
+            "primary_keyword": "promotional products",
+            "secondary_keywords": [
+                "promotional items",
+                "promotional products supplier",
+                "promotional items with logo",
+                "customized promotional products"
+            ],
+            "status": "Pending",
+            "priority": "Medium",
+            "last_audit": "Never",
+            "notes": "C2-P1"
+        },
+        {
+            "url": "https://www.bravamarketing.com/safety-vests",
+            "primary_keyword": "custom safety vest",
+            "secondary_keywords": [
+                "personalized safety vest",
+                "safety vest with logo",
+                "custom high vis vest",
+                "custom high visibility vest"
+            ],
+            "status": "Pending",
+            "priority": "Medium",
+            "last_audit": "Never",
+            "notes": "C2-P2"
+        }
+    ]
+}
