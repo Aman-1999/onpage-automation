@@ -118,9 +118,51 @@ class SEOAnalyzer:
                 if schema_matches:
                     schemas.extend(schema_matches)
 
-            unique_schemas = sorted(list(set(s for s in schemas if s)))
-            results['Schema_Types'] = ", ".join(unique_schemas) if unique_schemas else "None"
-            results['Schema_Present'] = "Yes" if unique_schemas else "No"
+            # --- Layered Schema Classification ---
+            
+            # Layer 1: Page-Defining Schema (Primary Intent)
+            PAGE_DEFINING = {
+                'Article', 'BlogPosting', 'NewsArticle', 'TechArticle',
+                'Product', 'LocalBusiness', 'Service', 'Restaurant', 
+                'FAQPage', 'QAPage', 'Event', 'JobPosting', 'Recipe', 'Review',
+                'WebPage', 'MedicalWebPage', 'Course'
+            }
+
+            # Layer 2: Entity Schema (Supporting - Report Separately)
+            ENTITY_SCHEMAS = {'Person', 'Organization'}
+
+            # Layer 3: Helper / Structural / Ignored (Do not report as primary)
+            # WebSite is site-level context, not page intent.
+            IGNORED_SCHEMAS = {
+                'PostalAddress', 'GeoCoordinates', 'ContactPoint', 'ImageObject', 
+                'SearchAction', 'EntryPoint', 'ReadAction', 'AuthorizeAction',
+                'Thing', 'Place', 'ListItem', 'BreadcrumbList', 'WebSite',
+                'Offer', 'AggregateRating', 'Rating', 'OpeningHoursSpecification',
+                'ItemList', 'CollectionPage', 'ProfilePage' 
+            }
+
+            primary_schemas = []
+            entity_schemas = []
+
+            for s in schemas:
+                if not s: continue
+                
+                if s in PAGE_DEFINING:
+                    primary_schemas.append(s)
+                elif s in ENTITY_SCHEMAS:
+                    entity_schemas.append(s)
+                # else: assumes it's either in IGNORED or some unknown helper we don't care about
+
+            # Deduplicate and Sort
+            unique_primary = sorted(list(set(primary_schemas)))
+            unique_entities = sorted(list(set(entity_schemas)))
+
+            results['Schema_Types'] = ", ".join(unique_primary) if unique_primary else "None"
+            results['Schema_Present'] = "Yes" if unique_primary else "No"
+            
+            # Add Entity info to a new field (optional display support)
+            if unique_entities:
+                results['Entity_Schema_Present'] = ", ".join(unique_entities)
 
             # --- KEYWORD ANALYSIS ---
             results['Primary_Keyword'] = primary_keyword
@@ -164,6 +206,59 @@ class SEOAnalyzer:
             results['Secondary_in_H2'] = ", ".join(sec_in_h2) if sec_in_h2 else "None"
             results['Secondary_in_H3'] = ", ".join(sec_in_h3) if sec_in_h3 else "None"
             results['Secondary_in_Content_List'] = ", ".join(sec_in_content) if sec_in_content else "None"
+
+            # --- Issues / Missing Report ---
+            issues = []
+            
+            # 1. Meta / Basic
+            if not results['Title']:
+                issues.append("Missing Page Title")
+            elif len(results['Title']) < 30:
+                issues.append(f"Title too short ({len(results['Title'])} chars)")
+            elif len(results['Title']) > 60:
+                issues.append(f"Title too long ({len(results['Title'])} chars)")
+                
+            if not results['Meta_Description']:
+                issues.append("Missing Meta Description")
+            elif len(results['Meta_Description']) < 50:
+                 issues.append(f"Meta Description too short ({len(results['Meta_Description'])} chars)")
+            elif len(results['Meta_Description']) > 160:
+                 issues.append(f"Meta Description too long ({len(results['Meta_Description'])} chars)")
+                 
+            if not results['Canonical_URL']:
+                issues.append("Missing Canonical URL")
+            elif results['Canonical_Type'] == "Canonicalized":
+                issues.append(f"Page is canonicalized to: {results['Canonical_URL']}")
+
+            # 2. Content
+            if not results['H1']:
+                issues.append("Missing H1 Tag")
+            elif results['H1_Count'] > 1:
+                issues.append(f"Multiple H1 Tags found ({results['H1_Count']})")
+                
+            if results['Word_Count'] < 300:
+                issues.append(f"Thin Content (Only {results['Word_Count']} words)")
+                
+            if results['Missing_Alt_Count'] > 0:
+                issues.append(f"Missing Alt Text on {results['Missing_Alt_Count']} images")
+
+            # 3. Schema
+            if results['Schema_Present'] == "No":
+                issues.append("No Schema Markup detected")
+
+            # 4. Keyword Checks
+            if pk_lower:
+                if results['Primary_in_Title'] == "No":
+                    issues.append("Primary Keyword missing from Title")
+                if results['Primary_in_H1'] == "No":
+                    issues.append("Primary Keyword missing from H1")
+                if results['Primary_in_First_100'] == "No":
+                   issues.append("Primary Keyword missing from First 100 Words")
+                if results['Primary_in_Meta_Desc'] == "No":
+                   issues.append("Primary Keyword missing from Meta Description")
+
+            results['Issues_List'] = issues
+            results['Has_Critical_Issues'] = True if issues else False
 
         except Exception as e:
             return self._get_error_result(url, f"Error: {str(e)}")

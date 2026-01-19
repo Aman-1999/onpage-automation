@@ -87,6 +87,100 @@ st.markdown("""
 
 </style>
 """, unsafe_allow_html=True)
+    
+def render_audit_results(results):
+    """
+    Renders the new vertical-friendly card layout for audit results.
+    """
+    if not results: return
+    
+    # Run Summary
+    passed = sum(1 for r in results if not r.get('Has_Critical_Issues', False) and r.get('Status_Code') == 200)
+    failed_fetch = sum(1 for r in results if r.get('Status_Code') != 200)
+    issues_found = len(results) - passed - failed_fetch
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("✅ Passed Health Check", passed)
+    c2.metric("⚠️ Needs Review", issues_found)
+    c3.metric("❌ Failed Fetch", failed_fetch)
+    
+    st.markdown("---")
+    
+    for i, res in enumerate(results):
+        # Card Header
+        status_color = "green" if res.get('Status_Code') == 200 else "red"
+        has_issues = res.get('Has_Critical_Issues', False)
+        icon = "⚠️" if has_issues else "✅"
+        if res.get('Status_Code') != 200: icon = "❌"
+        
+        # Display Name
+        client_label = f"[{res.get('Client')}] " if 'Client' in res else ""
+        
+        with st.container():
+            # Summary Line (Always Visible)
+            col_main, col_stat = st.columns([4, 1])
+            with col_main:
+                st.markdown(f"**{icon} {client_label}[{res.get('url')}]({res.get('url')})**")
+            with col_stat:
+                st.caption(f"Status: {res.get('Status_Code')}")
+
+            # Expandable Details
+            # Default expanded if there are issues or error
+            start_expanded = has_issues or res.get('Status_Code') != 200
+            
+            with st.expander("🔻 View Analysis Details", expanded=start_expanded):
+                
+                # SECTION: MISSING / ISSUES REPORT (Vertical List)
+                if has_issues:
+                    st.error("🚨 **Critical Issues Detected:**")
+                    issues = res.get('Issues_List', [])
+                    if isinstance(issues, list):
+                        for issue in issues:
+                            st.markdown(f"- {issue}")
+                    else:
+                        st.write(str(issues))
+                elif res.get('Status_Code') == 200:
+                    st.success("✅ No critical on-page issues detected.")
+                
+                st.divider()
+                
+                # SECTION: DETAILED METRICS GRID
+                g1, g2, g3 = st.columns(3)
+                
+                with g1:
+                    st.markdown("##### 📝 Meta Data")
+                    st.write(f"**Title**: {res.get('Title', 'N/A')}")
+                    st.caption(f"Length: {res.get('Title_Length', 0)}")
+                    st.write(f"**Desc**: {res.get('Meta_Description', 'N/A')}")
+                    st.caption(f"Length: {res.get('Meta_Desc_Length', 0)}")
+                    st.write(f"**Canon**: {res.get('Canonical_Type', 'N/A')}")
+                
+                with g2:
+                    st.markdown("##### 📄 Content")
+                    st.write(f"**Words**: {res.get('Word_Count', 0)}")
+                    st.write(f"**H1**: {res.get('H1', 'N/A')}")
+                    st.write(f"**Images**: {res.get('Images', 0)}")
+                    if res.get('Missing_Alt_Count', 0) > 0:
+                        st.caption(f"⚠️ {res['Missing_Alt_Count']} missing alt")
+                    st.write(f"**Links**: {res.get('Internal_Links', 0)}")
+                    
+                with g3:
+                    st.markdown("##### 🔑 Keywords")
+                    pk = res.get('Primary_Keyword', 'N/A')
+                    st.write(f"**Target**: `{pk}`")
+                    
+                    # Mini checks for primary
+                    checks = []
+                    if res.get('Primary_in_Title') == 'Yes': checks.append("Title")
+                    if res.get('Primary_in_H1') == 'Yes': checks.append("H1")
+                    if res.get('Primary_in_Content') == 'Yes': checks.append("Body")
+                    st.write(f"**Found In**: {', '.join(checks) if checks else 'None'}")
+                    
+                    st.write("**Secondary**:")
+                    sec_found = res.get('Secondary_in_Content_List', 'None')
+                    st.caption(sec_found)
+
+            st.write("") # Spacer between cards
 
 # --- Init Modules ---
 dm = DataManager()
@@ -103,9 +197,13 @@ with st.sidebar:
     if st.button("Run Global Audit (All Clients)", type="primary"):
         st.session_state['run_global'] = True
     else:
-        if 'run_global' not in st.session_state:
             st.session_state['run_global'] = False
             
+    if st.button("🗑️ Clear All Data", type="secondary"):
+        dm.save_data({}) # Wipe file
+        st.session_state.clear() # Clear session
+        st.rerun()
+
     st.divider()
     st.header(" Data Import")
     
@@ -248,8 +346,8 @@ if run_global:
             
             # Merge
             combined_res = {**item, **audit_res}
-            combined_res['Client'] = client # Add Client Name
-            combined_res['Your_Secondary_Keywords'] = ", ".join(item['secondary_keywords'])
+            combined_res['Client'] = client # Keep Client Name
+            # combined_res['Your_Secondary_Keywords'] removed to avoid duplication
             
             results_list.append(combined_res)
             
@@ -262,37 +360,12 @@ if run_global:
         status_text.text("Global Analysis Complete! ✅")
         
         if results_list:
+            # Render New UI
+            render_audit_results(results_list)
+            
+            # Prepare CSV Download
             df = pd.DataFrame(results_list)
-            
-            # Structure for Global
-            cols_info = ['Client', 'url', 'status', 'Status_Code', 'last_audit', 'priority'] # Added Client
-            cols_schema = ['Schema_Present', 'Schema_Types']
-            cols_prim = ['Primary_Keyword', 'Primary_in_Title', 'Primary_in_H1', 'Primary_in_First_100']
-            cols_sec = ['Secondary_in_H2', 'Secondary_in_Content_List']
-            cols_content = ['Word_Count', 'Internal_Links', 'Images', 'Missing_Alt_Count']
-            
-            priority_order = cols_info + cols_schema + cols_prim + cols_sec + cols_content
-            final_cols = [c for c in priority_order if c in df.columns]
-            exclude_cols = ['secondary_keywords', 'Your_Secondary_Keywords', 'Config_Secondary_Keywords', 'Missing_Alt_Files']
-            remaining_cols = [c for c in df.columns if c not in final_cols and c not in exclude_cols]
-            
-            df_final = df[final_cols + remaining_cols]
-            
-            rename_map = {
-                'url': 'Url', 'status': 'Status', 'Status_Code': 'Code', 'last_audit': 'Last Check', 
-                'priority': 'Prio', 'Schema_Present': 'Schema?', 'Schema_Types': 'Types',
-                'Primary_Keyword': 'Keyword', 'Primary_in_Title': 'P_Title', 'Primary_in_H1': 'P_H1', 
-                'Primary_in_First_100': 'P_100w', 'Secondary_in_H2': 'Sec_H2', 'Secondary_in_Content_List': 'Sec_Content',
-                'Word_Count': 'Words', 'Internal_Links': 'Links', 'Images': 'Imgs', 'Missing_Alt_Count': 'No_Alt'
-            }
-            
-            df_view = df_final.copy()
-            if 'Schema_Types' in df_view.columns:
-                 df_view['Schema_Types'] = df_view['Schema_Types'].apply(lambda x: x[:30] + '...' if len(str(x)) > 30 else x)
-            df_view = df_view.rename(columns=rename_map)
-            
-            st.dataframe(df_view, use_container_width=True)
-            st.download_button("📥 Download Master Report", df_final.to_csv(index=False).encode('utf-8'), f"global_audit_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
+            st.download_button("📥 Download Master Report", df.to_csv(index=False).encode('utf-8'), f"global_audit_{datetime.now().strftime('%Y%m%d')}.csv", "text/csv")
 
 elif not data:
     st.info("👋 Welcome! Use the sidebar to add your first client and target URLs.")
@@ -369,8 +442,7 @@ else:
                     
                     # Merge static data (Status, Priority) with Audit Results
                     combined_res = {**item, **audit_res}
-                    # We don't want the raw secondary_keywords list in the excel export, join it
-                    combined_res['Your_Secondary_Keywords'] = ", ".join(item['secondary_keywords'])
+                    # combined_res['Your_Secondary_Keywords'] removed to avoid duplication
                     
                     results_list.append(combined_res)
                     
@@ -385,75 +457,23 @@ else:
                 
                 # --- Results Display ---
                 if results_list:
+                    st.subheader("📊 Audit Results")
+                    
+                    # Render New UI
+                    render_audit_results(results_list)
+                    
                     df = pd.DataFrame(results_list)
                     
-                    # --- Report Structure Definition ---
-                    # 1. INFO GROUP
-                    cols_info = ['url', 'status', 'Status_Code', 'last_audit', 'priority']
-                    # 2. SCHEMA GROUP
-                    cols_schema = ['Schema_Present', 'Schema_Types']
-                    # 3. KEYWORD GROUP (Primary)
-                    cols_prim = ['Primary_Keyword', 'Primary_in_Title', 'Primary_in_H1', 'Primary_in_First_100']
-                    # 4. KEYWORD GROUP (Secondary - Results Only)
-                    cols_sec = ['Secondary_in_H2', 'Secondary_in_Content_List']
-                    # 5. CONTENT HEALTH
-                    cols_content = ['Word_Count', 'Internal_Links', 'Images', 'Missing_Alt_Count']
-                    
-                    # Combine all priority columns
-                    priority_order = cols_info + cols_schema + cols_prim + cols_sec + cols_content
-                    
-                    # Filter existing columns
-                    final_cols = [c for c in priority_order if c in df.columns]
-                    
-                    # Add any debug/extra columns at the very end (hidden from main view typically)
-                    # We EXCLUDE 'secondary_keywords' and 'Your_Secondary_Keywords' to avoid duplication
-                    exclude_cols = ['secondary_keywords', 'Your_Secondary_Keywords', 'Config_Secondary_Keywords', 'Missing_Alt_Files']
-                    remaining_cols = [c for c in df.columns if c not in final_cols and c not in exclude_cols]
-                    
-                    df_final = df[final_cols + remaining_cols]
-                    
-                    # --- Rename for Layout Compactness ---
-                    rename_map = {
-                        'url': 'Url',
-                        'status': 'Status',
-                        'Status_Code': 'Code',
-                        'last_audit': 'Last_Check',
-                        'priority': 'Prio',
-                        'Schema_Present': 'Schema?',
-                        'Schema_Types': 'Types',
-                        'Primary_Keyword': 'Keyword',
-                        'Primary_in_Title': 'P_Title',
-                        'Primary_in_H1': 'P_H1',
-                        'Primary_in_First_100': 'P_100w',
-                        'Secondary_in_H2': 'Sec_H2',
-                        'Secondary_in_Content_List': 'Sec_Content',
-                        'Word_Count': 'Words',
-                        'Internal_Links': 'Links',
-                        'Images': 'Imgs',
-                        'Missing_Alt_Count': 'No_Alt_Count' # Ensure this is used instead of Files
-                    }
-                    
-                    # Create View DataFrame
-                    df_view = df_final.copy()
-                    
-                    # 1. Truncate Schema Types to avoid horizontal scroll explosion
-                    if 'Schema_Types' in df_view.columns:
-                        df_view['Schema_Types'] = df_view['Schema_Types'].apply(lambda x: x[:40] + '...' if len(str(x)) > 40 else x)
+                    # Clean up columns for export
+                    # Clean up columns for export
+                    cols_to_drop = ['secondary_keywords', 'Config_Secondary_Keywords', 'Missing_Alt_Files', 'notes', 'Your_Secondary_Keywords']
+                    for c in cols_to_drop:
+                        if c in df.columns:
+                            df = df.drop(columns=[c])
 
-                    # 2. Remove columns user explicitly doesn't want in view
-                    if 'Missing_Alt_Files' in df_view.columns:
-                        df_view = df_view.drop(columns=['Missing_Alt_Files'])
-
-                    # Rename
-                    df_view = df_view.rename(columns=rename_map)
-                    
-                    st.subheader("📊 Audit Results")
-                    st.dataframe(df_view, use_container_width=True)
-                    
-                    # Excel Export (Keep full names & full data)
                     st.download_button(
                         label="📥 Download Excel Report",
-                        data=df_final.to_csv(index=False).encode('utf-8'),
+                        data=df.to_csv(index=False).encode('utf-8'),
                         file_name=f"audit_report_{selected_client_view}_{datetime.now().strftime('%Y%m%d')}.csv",
                         mime="text/csv"
                     )
